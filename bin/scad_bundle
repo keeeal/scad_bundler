@@ -6,8 +6,9 @@
 ENV['BUNDLE_GEMFILE'] = 'Scadfile'
 
 require 'bundler'
+require 'fileutils'
+require 'scad_bundler'
 require 'shellwords'
-
 
 # FIXME: ideally we would delegate this all directly to bundler
 # We do want to wrap bundler and not just use it directly, to limit
@@ -15,12 +16,49 @@ require 'shellwords'
 # different implementations later.
 command = ARGV.shift
 
-if command != 'init' && ! File.exist?('Scadfile')
-  puts 'Could not find Scadfile'
-  exit(1)
+def assert_scadfile
+  unless File.exist?('Scadfile')
+    puts 'Could not find Scadfile'
+    exit(1)
+  end
+end
+
+def copy_packages_to_openscad_library_path
+  config = ScadBundler::Config.load(create_if_missing: true)
+  puts "Installing to #{config.openscad_library_path}..."
+  FileUtils.mkdir_p(config.openscad_library_path)
+  specs = Bundler.load.specs.reject {|s| s.name == "bundler" }.sort_by(&:name)
+  specs.each do |spec|
+    FileUtils.cp_r(spec.full_gem_path, config.openscad_library_path)
+    puts " - Installed #{spec.name} #{spec.version}"
+  end
 end
 
 case command
+when 'version'
+  # Display the version
+  puts ScadBundler::VERSION
+when 'config'
+  key = ARGV.shift
+  value = ARGV.shift
+
+  if key.nil?
+    puts "Usage: #{File.basename(__FILE__)} config <key> [value]"
+    exit(1)
+  end
+
+  config = ScadBundler::Config.load(create_if_missing: true)
+
+  unless config.respond_to?(key)
+    puts "Invalid key: #{key}"
+    exit(1)
+  end
+  if value.nil?
+    puts config.send(key)
+  else
+    config.send("#{key}=", value)
+    config.save
+  end
 when 'init'
   # Setup new Scadfile
   if File.exist?('Scadfile')
@@ -29,20 +67,28 @@ when 'init'
   end
 
   File.open('Scadfile', 'w') { |file| file.write("source \"https://rubygems.org\"\n\n# gem 'openscad_soften'\n") }
-when 'exec'
-  # Run the specified command with OPENSCADPATH set in the environment
-  specs = Bundler.load.specs.reject {|s| s.name == "bundler" }.sort_by(&:name)
-  lib_paths = specs.map { |spec| spec.full_gem_path }
-  env = {'OPENSCADPATH' => lib_paths.join(':')}
-
-  args = ARGV.map { |x| Shellwords.escape(x) }
-  exec( env, args.join(' ')  )
 when 'update'
+  assert_scadfile
+
   # Update packages
-  exec( { 'BUNDLE_GEMFILE' => 'Scadfile' }, 'bundle', 'update')
+  result = system( { 'BUNDLE_GEMFILE' => 'Scadfile' }, 'bundle', 'update')
+  if result.nil? || !result
+    puts 'Failed to update packages'
+    exit(1)
+  end
+
+  copy_packages_to_openscad_library_path
 when 'install'
+  assert_scadfile
+
   # Install packages
-  exec( { 'BUNDLE_GEMFILE' => 'Scadfile' }, 'bundle', 'install')
+  result = system( { 'BUNDLE_GEMFILE' => 'Scadfile' }, 'bundle', 'install')
+  if result.nil? || !result
+    puts 'Failed to install packages'
+    exit(1)
+  end
+
+  copy_packages_to_openscad_library_path
 else
   puts "Invalid command: #{command}"
   exit(1)

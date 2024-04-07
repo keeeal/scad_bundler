@@ -1,6 +1,8 @@
 
 lib = File.expand_path("../lib", __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+
+require "scad_bundler/config"
 require "scad_bundler/version"
 
 Gem::Specification.new do |spec|
@@ -21,5 +23,6 @@ Gem::Specification.new do |spec|
   spec.executables   = ['scad_bundle']
   spec.require_paths = ["lib"]
 
-  spec.add_development_dependency "bundler", "~> 2.0"
+  spec.add_dependency "bundler", "~> 2.0"
+  spec.add_dependency "os", "~> 1.1.4"
 end
